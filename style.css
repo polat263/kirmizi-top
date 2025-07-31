@@ -1,0 +1,10 @@
+body {
+  margin: 0;
+  background: linear-gradient(#87CEEB, #ffffff);
+}
+canvas {
+  display: block;
+  margin: 0 auto;
+  border: 2px solid #000;
+  background: #aee;
+}

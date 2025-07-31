@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<title>Red Ball 4 - Az Platformlu Zorluk</title>
+<style>
+  body {
+    margin: 0; background: #87ceeb; font-family: sans-serif; user-select: none;
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  }
+  canvas { background: #87ceeb; display: block; margin: 10px auto; border: 2px solid #333; }
+  #hud { font-size: 18px; color: #222; margin-top: 10px; }
+  #nextLevelBtn {
+    margin-top: 5px; padding: 10px 20px; font-size: 18px;
+    border:none; border-radius: 8px; background: #444; color: white; cursor: pointer;
+    display:none;
+  }
+  #gameOverMsg {
+    margin-top: 20px; font-size: 24px; color: red; display:none;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="game" width="800" height="400"></canvas>
+<div id="hud">Can: 3 | Skor: 0 | Seviye: 1</div>
+<button id="nextLevelBtn" onclick="nextLevel()">Sonraki Seviye</button>
+<div id="gameOverMsg">Oyun Bitti! Yeniden başlamak için sayfayı yenileyin.</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+let ball = {x:50, y:300, r:20, dx:0, dy:0, onGround:false, can:3, skor:0};
+const gravity = 0.5;
+const jumpPower = -10;
+const moveSpeed = 3;
+const groundY = 350;
+let keys = {left:false, right:false, jump:false};
+let currentLevel = 0;
+let platforms = [];
+let enemies = [];
+let spikes = [];
+let flag = null;
+let levelCompleted = false;
+let frameCount = 0;
+
+document.addEventListener('keydown', e => {
+  if(e.key === 'ArrowLeft') keys.left = true;
+  if(e.key === 'ArrowRight') keys.right = true;
+  if(e.key === ' ') keys.jump = true;
+});
+document.addEventListener('keyup', e => {
+  if(e.key === 'ArrowLeft') keys.left = false;
+  if(e.key === 'ArrowRight') keys.right = false;
+  if(e.key === ' ') keys.jump = false;
+});
+
+function randomRange(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function generateLevel(n) {
+  // Platform sayısı 1 veya 2
+  let plats = [];
+  let baseX = 150;
+  let platformCount = randomRange(1, 2);
+  for(let i=0; i<platformCount; i++) {
+    plats.push({
+      x: baseX + i * randomRange(150, 250),
+      y: randomRange(220, 320),
+      w: randomRange(100, 140),
+      h: 10,
+      dy: (i%2 === 0 ? 1 : -1) * (1 + n*0.02)
+    });
+  }
+
+  // Düşman sayısı 1 ile max 2 + floor(n/10)
+  let maxEnemies = 2 + Math.floor(n / 10);
+  let enemyCount = randomRange(1, maxEnemies);
+
+  let ens = [];
+  for(let i=0; i<enemyCount; i++) {
+    ens.push({
+      x: 200 + i*randomRange(100,150),
+      y: 330,
+      baseY: 330,
+      w: 30,
+      h: 30,
+      dir: i%2 === 0 ? 1 : -1,
+      speed: 1 + n*0.05,
+      amplitude: 10 + i*5,
+      frequency: 0.05 + i*0.01,
+      phase: Math.random()*Math.PI*2
+    });
+  }
+
+  let spikeCount = Math.min(Math.floor(n / 20), 5);
+  let spks = [];
+  for(let i=0; i<spikeCount; i++) {
+    spks.push({
+      x: 400 + i*randomRange(70,90),
+      y: 340,
+      w: 20,
+      h: 20
+    });
+  }
+
+  let flg = { x: 750, y: randomRange(270, 320), w: 20, h: 50 };
+
+  return {
+    platforms: plats,
+    enemies: ens,
+    spikes: spks,
+    flag: flg
+  };
+}
+
+function loadLevel() {
+  if(currentLevel >= 100) {
+    alert("🎉 Tebrikler! 100 seviyeyi tamamladın!");
+    currentLevel = 0;
+    ball.skor = 0;
+    ball.can = 3;
+  }
+
+  let lvl = generateLevel(currentLevel);
+  platforms = lvl.platforms;
+  enemies = lvl.enemies;
+  spikes = lvl.spikes;
+  flag = lvl.flag;
+
+  ball.x = 50;
+  ball.y = 300;
+  ball.dx = 0;
+  ball.dy = 0;
+  ball.onGround = false;
+
+  levelCompleted = false;
+  document.getElementById('nextLevelBtn').style.display = 'none';
+  document.getElementById('gameOverMsg').style.display = 'none';
+
+  frameCount = 0;
+}
+
+function drawBall() {
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+  ctx.fillStyle = 'red';
+  ctx.fill();
+  ctx.closePath();
+}
+
+function drawGround() {
+  ctx.fillStyle = '#654321';
+  ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
+}
+
+function drawPlatform(p) {
+  ctx.fillStyle = '#888';
+  ctx.fillRect(p.x, p.y, p.w, p.h);
+}
+
+function drawEnemy(e) {
+  ctx.fillStyle = 'black';
+  ctx.fillRect(e.x, e.y, e.w, e.h);
+}
+
+function drawSpike(s) {
+  ctx.fillStyle = 'gray';
+  ctx.beginPath();
+  ctx.moveTo(s.x, s.y + s.h);
+  ctx.lineTo(s.x + s.w/2, s.y);
+  ctx.lineTo(s.x + s.w, s.y + s.h);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawFlag(f) {
+  ctx.fillStyle = 'green';
+  ctx.fillRect(f.x, f.y, f.w, f.h);
+}
+
+function collisionCircleRect(c, r) {
+  let distX = Math.abs(c.x - r.x - r.w/2);
+  let distY = Math.abs(c.y - r.y - r.h/2);
+
+  if(distX > (r.w/2 + c.r)) return false;
+  if(distY > (r.h/2 + c.r)) return false;
+
+  if(distX <= (r.w/2)) return true;
+  if(distY <= (r.h/2)) return true;
+
+  let dx = distX - r.w/2;
+  let dy = distY - r.h/2;
+  return (dx*dx + dy*dy <= (c.r*c.r));
+}
+
+function update() {
+  if(levelCompleted) return;
+
+  frameCount++;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  drawGround();
+  drawBall();
+  platforms.forEach(drawPlatform);
+  spikes.forEach(drawSpike);
+  drawFlag(flag);
+
+  // Hareket
+  if(keys.left) ball.dx = -moveSpeed;
+  else if(keys.right) ball.dx = moveSpeed;
+  else ball.dx = 0;
+
+  if(keys.jump && ball.onGround) {
+    ball.dy = jumpPower;
+    ball.onGround = false;
+  }
+
+  // Fizik
+  ball.dy += gravity;
+  ball.x += ball.dx;
+  ball.y += ball.dy;
+
+  // Zemin
+  if(ball.y + ball.r >= groundY) {
+    ball.y = groundY - ball.r;
+    ball.dy = 0;
+    ball.onGround = true;
+  }
+
+  // Platformlar
+  ball.onGround = ball.y + ball.r >= groundY;
+  platforms.forEach(p => {
+    p.y += p.dy;
+    if(p.y <= 200) p.dy *= -1;
+    if(p.y >= 320) p.dy *= -1;
+
+    if(ball.dy >= 0 && ball.x > p.x && ball.x < p.x + p.w && ball.y + ball.r > p.y && ball.y + ball.r < p.y + p.h + 10) {
+      ball.y = p.y - ball.r;
+      ball.dy = 0;
+      ball.onGround = true;
+    }
+  });
+
+  // Düşmanlar - yatay + dikey hareket
+  enemies.forEach((e) => {
+    e.x += e.dir * e.speed;
+    if(e.x <= 200) e.dir = 1;
+    if(e.x + e.w >= 600) e.dir = -1;
+
+    e.y = e.baseY + e.amplitude * Math.sin(frameCount * e.frequency + e.phase);
+
+    drawEnemy(e);
+
+    if(collisionCircleRect(ball, e)) {
+      ball.can--;
+      if(ball.can <= 0) gameOver();
+      else loadLevel();
+    }
+  });
+
+  spikes.forEach(s => {
+    if(collisionCircleRect(ball, s)) {
+      ball.can--;
+      if(ball.can <= 0) gameOver();
+      else loadLevel();
+    }
+  });
+
+  if(collisionCircleRect(ball, flag)) {
+    ball.skor += 100 + currentLevel*10;
+    levelCompleted = true;
+    document.getElementById('nextLevelBtn').style.display = 'inline-block';
+  }
+
+  // En üstte topu tekrar çiz
+  drawBall();
+
+  document.getElementById('hud').innerText = `Can: ${ball.can} | Skor: ${ball.skor} | Seviye: ${currentLevel + 1}`;
+
+  requestAnimationFrame(update);
+}
+
+function nextLevel() {
+  currentLevel++;
+  loadLevel();
+  update();
+}
+
+function gameOver() {
+  levelCompleted = true;
+  document.getElementById('gameOverMsg').style.display = 'block';
+  document.getElementById('nextLevelBtn').style.display = 'none';
+}
+
+loadLevel();
+update();
+</script>
+
+</body>
+</html>
